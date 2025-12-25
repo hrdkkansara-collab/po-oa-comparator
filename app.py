@@ -28,7 +28,13 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
 
     # Convert numeric columns
     for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors='ignore')
+    # Flatten column to string first (in case of lists)
+    df[col] = df[col].apply(lambda x: str(x) if isinstance(x, list) else x)
+    # Remove extra spaces
+    df[col] = df[col].str.strip() if df[col].dtype == 'object' else df[col]
+    # Convert to numeric where possible
+    df[col] = pd.to_numeric(df[col], errors='ignore')
+
     return df
 
 # --- Comparison with tolerance ---
