@@ -37,7 +37,7 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
                     all_rows.append(clean_row)
 
     if not all_rows:
-        return pd.DataFrame()  # return empty DataFrame if no table
+        return pd.DataFrame()  # empty DataFrame
 
     df = pd.DataFrame(all_rows)
 
@@ -65,6 +65,7 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
 
 # ---------------------- Comparison with Tolerance ----------------------
 def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
+    # Ensure 'Item' column exists
     if 'Item' not in po_df.columns or 'Item' not in oa_df.columns:
         st.warning("Both PO and OA files must contain an 'Item' column for comparison.")
         return pd.DataFrame()
@@ -73,12 +74,15 @@ def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) ->
     comparison_results = merged.copy()
 
     for col in po_df.columns:
-        if col in tolerances and pd.api.types.is_numeric_dtype(po_df[col]):
-            po_col = f"{col}_PO"
-            oa_col = f"{col}_OA"
-            comparison_results[f"{col}_Diff"] = comparison_results[oa_col] - comparison_results[po_col]
-            comparison_results[f"{col}_%Diff"] = (comparison_results[f"{col}_Diff"] / comparison_results[po_col]) * 100
-            comparison_results[f"{col}_Within_Tolerance"] = comparison_results[f"{col}_%Diff"].abs() <= tolerances[col]
+        po_col = f"{col}_PO"
+        oa_col = f"{col}_OA"
+
+        # Only process if column is numeric and exists
+        if col in tolerances and po_col in comparison_results.columns and oa_col in comparison_results.columns:
+            if pd.api.types.is_numeric_dtype(comparison_results[po_col]):
+                comparison_results[f"{col}_Diff"] = comparison_results[oa_col] - comparison_results[po_col]
+                comparison_results[f"{col}_%Diff"] = (comparison_results[f"{col}_Diff"] / comparison_results[po_col]) * 100
+                comparison_results[f"{col}_Within_Tolerance"] = comparison_results[f"{col}_%Diff"].abs() <= tolerances[col]
 
     return comparison_results
 
@@ -147,6 +151,6 @@ if po_file and oa_file and not po_df.empty and not oa_df.empty:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        st.warning("Comparison could not be performed. Check that both files contain an 'Item' column.")
+        st.warning("Comparison could not be performed. Ensure both files contain an 'Item' column.")
 else:
     st.info("Please upload both PO and OA files to run comparison.")
