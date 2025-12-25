@@ -27,31 +27,34 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
                             cell = ''
                         else:
                             cell = str(cell)
-                        # Translate to English
+                        # Translate
                         translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
                         clean_row.append(translated_cell)
                     all_rows.append(clean_row)
 
     if not all_rows:
-        return pd.DataFrame()  # empty DataFrame if no table found
+        return pd.DataFrame()  # empty DataFrame
 
     df = pd.DataFrame(all_rows)
 
-    # Use first row as header if multiple rows
+    # Safely assign header
     if len(df) > 1:
-        df.columns = df.iloc[0]
+        df.columns = df.iloc[0].astype(str)  # ensure column names are strings
         df = df[1:].reset_index(drop=True)
     else:
         df.columns = [f"Column_{i}" for i in range(len(df.columns))]
 
     # Safely clean numeric columns
     for col in df.columns:
-        if col not in df:
+        if col not in df.columns:
             continue
         df[col] = df[col].apply(lambda x: ' '.join(x) if isinstance(x, list) else x)
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
-        df[col] = pd.to_numeric(df[col], errors='ignore')
+        try:
+            df[col] = pd.to_numeric(df[col], errors='ignore')
+        except Exception:
+            continue
 
     return df
 
