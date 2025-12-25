@@ -1,5 +1,6 @@
 streamlit
 pandas
-PDFplumber
-openpyxl
+pdfplumber
 deep-translator
+openpyxl
+
