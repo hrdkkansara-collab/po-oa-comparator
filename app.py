@@ -119,7 +119,7 @@ if po_file and oa_file:
         st.subheader("📊 Comparison Results")
         st.dataframe(result, use_container_width=True)
 
-      excel_buffer = BytesIO()
+excel_buffer = BytesIO()
 result.to_excel(excel_buffer, index=False)
 excel_buffer.seek(0)
 
