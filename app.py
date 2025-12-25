@@ -4,10 +4,10 @@ import pdfplumber
 from io import BytesIO
 from deep_translator import GoogleTranslator
 
-# --- Function to extract tables from PDF and translate ---
+# --- PDF Parsing + Translation ---
 def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
     """
-    Extract tables from PDF, translate content to English if needed, and return as DataFrame.
+    Extract tables from PDF, translate content to English, return as DataFrame.
     """
     all_rows = []
     with pdfplumber.open(pdf_file) as pdf:
@@ -15,17 +15,89 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    # Translate each cell to English
-                    translated_row = [GoogleTranslator(source='auto', target=target_lang).translate(str(cell)) for cell in row]
+                    translated_row = [
+                        GoogleTranslator(source='auto', target=target_lang).translate(str(cell))
+                        for cell in row
+                    ]
                     all_rows.append(translated_row)
 
-    # Convert to DataFrame
     df = pd.DataFrame(all_rows)
     # Assume first row is header
     df.columns = df.iloc[0]
     df = df[1:].reset_index(drop=True)
 
-    # Convert numeric columns automatically
+    # Convert numeric columns
     for col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='ignore')
     return df
+
+# --- Comparison with tolerance ---
+def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
+    merged = pd.merge(po_df, oa_df, on='Item', suffixes=('_PO', '_OA'), how='outer')
+    comparison_results = merged.copy()
+
+    for col in po_df.columns:
+        if col in tolerances and pd.api.types.is_numeric_dtype(po_df[col]):
+            po_col = f"{col}_PO"
+            oa_col = f"{col}_OA"
+            comparison_results[f"{col}_Diff"] = comparison_results[oa_col] - comparison_results[po_col]
+            comparison_results[f"{col}_%Diff"] = (comparison_results[f"{col}_Diff"] / comparison_results[po_col]) * 100
+            comparison_results[f"{col}_Within_Tolerance"] = comparison_results[f"{col}_%Diff"].abs() <= tolerances[col]
+    return comparison_results
+
+# --- Export to Excel ---
+def export_to_excel(df: pd.DataFrame) -> BytesIO:
+    excel_buffer = BytesIO()
+    df.to_excel(excel_buffer, index=False)
+    excel_buffer.seek(0)
+    return excel_buffer
+
+# --- Streamlit UI ---
+st.title("Cloud PO vs OA Comparator with PDF Translation & Tolerance")
+
+# Upload files
+po_file = st.file_uploader("Upload Purchase Order (PDF or Excel)", type=["pdf","xlsx","csv"])
+oa_file = st.file_uploader("Upload Order Acknowledgement (PDF or Excel)", type=["pdf","xlsx","csv"])
+
+st.sidebar.header("Tolerance Settings (%)")
+tolerances = {}
+
+# Read PO
+if po_file:
+    if po_file.name.endswith(".pdf"):
+        po_df = pdf_to_dataframe_translate(po_file)
+    elif po_file.name.endswith(".xlsx"):
+        po_df = pd.read_excel(po_file)
+    else:
+        po_df = pd.read_csv(po_file)
+
+    numeric_cols = po_df.select_dtypes(include='number').columns.tolist()
+    for col in numeric_cols:
+        tolerances[col] = st.sidebar.number_input(f"Tolerance for {col} (%)", value=5.0, step=0.1)
+
+# Read OA
+if oa_file:
+    if oa_file.name.endswith(".pdf"):
+        oa_df = pdf_to_dataframe_translate(oa_file)
+    elif oa_file.name.endswith(".xlsx"):
+        oa_df = pd.read_excel(oa_file)
+    else:
+        oa_df = pd.read_csv(oa_file)
+
+# Run comparison
+if po_file and oa_file:
+    result = compare_po_oa(po_df, oa_df, tolerances)
+    
+    st.subheader("Comparison Result")
+    st.dataframe(result)
+
+    # Download Excel
+    excel_file = export_to_excel(result)
+    st.download_button(
+        label="Download Comparison as Excel",
+        data=excel_file,
+        file_name="PO_OA_Comparison.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+else:
+    st.info("Please upload both PO and OA files to run comparison.")
