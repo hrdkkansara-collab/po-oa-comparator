@@ -4,7 +4,7 @@ import pdfplumber
 from io import BytesIO
 from deep_translator import GoogleTranslator
 
-# ---------------------- PDF Parsing + Translation ----------------------
+# ---------------------- Robust PDF Parsing + Translation ----------------------
 def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
     """
     Extract tables from PDF, translate content to English, return as DataFrame.
@@ -20,22 +20,24 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
                 for row in table:
                     clean_row = []
                     for cell in row:
+                        # Flatten lists and handle None
                         if isinstance(cell, list):
                             cell = ' '.join([str(c) for c in cell])
                         elif cell is None:
                             cell = ''
                         else:
                             cell = str(cell)
+                        # Translate to English
                         translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
                         clean_row.append(translated_cell)
                     all_rows.append(clean_row)
 
     if not all_rows:
-        return pd.DataFrame()  # return empty DataFrame if no table found
+        return pd.DataFrame()  # empty DataFrame if no table found
 
     df = pd.DataFrame(all_rows)
 
-    # Use first row as header if more than one row
+    # Use first row as header if multiple rows
     if len(df) > 1:
         df.columns = df.iloc[0]
         df = df[1:].reset_index(drop=True)
@@ -78,7 +80,7 @@ def export_to_excel(df: pd.DataFrame) -> BytesIO:
 # ---------------------- Streamlit UI ----------------------
 st.title("Cloud PO vs OA Comparator with PDF Translation & Tolerance")
 
-# File uploads
+# Upload PO and OA files
 po_file = st.file_uploader("Upload Purchase Order (PDF/Excel/CSV)", type=["pdf","xlsx","csv"])
 oa_file = st.file_uploader("Upload Order Acknowledgement (PDF/Excel/CSV)", type=["pdf","xlsx","csv"])
 
@@ -114,7 +116,7 @@ if po_file and oa_file:
     st.subheader("Comparison Result")
     st.dataframe(result)
 
-    # Download Excel
+    # Excel download
     excel_file = export_to_excel(result)
     st.download_button(
         label="Download Comparison as Excel",
