@@ -53,7 +53,6 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
 
     return df
 
-
 # ---------------------- Comparison with Tolerance ----------------------
 def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
     merged = pd.merge(po_df, oa_df, on='Item', suffixes=('_PO', '_OA'), how='outer')
