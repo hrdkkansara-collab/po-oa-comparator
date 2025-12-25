@@ -11,6 +11,7 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
     Handles nested lists, None cells, empty tables, and safely converts numeric columns.
     """
     all_rows = []
+
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
@@ -27,39 +28,47 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
                             cell = ''
                         else:
                             cell = str(cell)
-                        # Translate
-                        translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
+                        # Translate cell
+                        try:
+                            translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
+                        except Exception:
+                            translated_cell = cell  # fallback if translation fails
                         clean_row.append(translated_cell)
                     all_rows.append(clean_row)
 
     if not all_rows:
-        return pd.DataFrame()  # empty DataFrame
+        return pd.DataFrame()  # return empty DataFrame if no table
 
     df = pd.DataFrame(all_rows)
 
-    # Safely assign header
+    # Ensure proper headers
     if len(df) > 1:
-        df.columns = df.iloc[0].astype(str)  # ensure column names are strings
+        df.columns = df.iloc[0].astype(str)
         df = df[1:].reset_index(drop=True)
     else:
         df.columns = [f"Column_{i}" for i in range(len(df.columns))]
 
-    # Safely clean numeric columns
-    for col in df.columns:
-        if col not in df.columns:
-            continue
-        df[col] = df[col].apply(lambda x: ' '.join(x) if isinstance(x, list) else x)
-        if df[col].dtype == 'object':
-            df[col] = df[col].astype(str).str.strip()
-        try:
-            df[col] = pd.to_numeric(df[col], errors='ignore')
-        except Exception:
-            continue
+    # Only process if df has columns
+    if not df.empty and len(df.columns) > 0:
+        for col in df.columns:
+            if col not in df.columns:
+                continue
+            df[col] = df[col].apply(lambda x: ' '.join(x) if isinstance(x, list) else x)
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str).str.strip()
+            try:
+                df[col] = pd.to_numeric(df[col], errors='ignore')
+            except Exception:
+                pass
 
     return df
 
 # ---------------------- Comparison with Tolerance ----------------------
 def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
+    if 'Item' not in po_df.columns or 'Item' not in oa_df.columns:
+        st.warning("Both PO and OA files must contain an 'Item' column for comparison.")
+        return pd.DataFrame()
+    
     merged = pd.merge(po_df, oa_df, on='Item', suffixes=('_PO', '_OA'), how='outer')
     comparison_results = merged.copy()
 
@@ -92,40 +101,52 @@ tolerances = {}
 
 # Read PO
 if po_file:
-    if po_file.name.endswith(".pdf"):
-        po_df = pdf_to_dataframe_translate(po_file)
-    elif po_file.name.endswith(".xlsx"):
-        po_df = pd.read_excel(po_file)
-    else:
-        po_df = pd.read_csv(po_file)
+    try:
+        if po_file.name.endswith(".pdf"):
+            po_df = pdf_to_dataframe_translate(po_file)
+        elif po_file.name.endswith(".xlsx"):
+            po_df = pd.read_excel(po_file)
+        else:
+            po_df = pd.read_csv(po_file)
+    except Exception as e:
+        st.error(f"Error reading PO file: {e}")
+        po_df = pd.DataFrame()
 
-    numeric_cols = po_df.select_dtypes(include='number').columns.tolist()
-    for col in numeric_cols:
-        tolerances[col] = st.sidebar.number_input(f"Tolerance for {col} (%)", value=5.0, step=0.1)
+    if not po_df.empty:
+        numeric_cols = po_df.select_dtypes(include='number').columns.tolist()
+        for col in numeric_cols:
+            tolerances[col] = st.sidebar.number_input(f"Tolerance for {col} (%)", value=5.0, step=0.1)
 
 # Read OA
 if oa_file:
-    if oa_file.name.endswith(".pdf"):
-        oa_df = pdf_to_dataframe_translate(oa_file)
-    elif oa_file.name.endswith(".xlsx"):
-        oa_df = pd.read_excel(oa_file)
-    else:
-        oa_df = pd.read_csv(oa_file)
+    try:
+        if oa_file.name.endswith(".pdf"):
+            oa_df = pdf_to_dataframe_translate(oa_file)
+        elif oa_file.name.endswith(".xlsx"):
+            oa_df = pd.read_excel(oa_file)
+        else:
+            oa_df = pd.read_csv(oa_file)
+    except Exception as e:
+        st.error(f"Error reading OA file: {e}")
+        oa_df = pd.DataFrame()
 
 # Run comparison
-if po_file and oa_file:
+if po_file and oa_file and not po_df.empty and not oa_df.empty:
     result = compare_po_oa(po_df, oa_df, tolerances)
     
-    st.subheader("Comparison Result")
-    st.dataframe(result)
+    if not result.empty:
+        st.subheader("Comparison Result")
+        st.dataframe(result)
 
-    # Excel download
-    excel_file = export_to_excel(result)
-    st.download_button(
-        label="Download Comparison as Excel",
-        data=excel_file,
-        file_name="PO_OA_Comparison.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        # Excel download
+        excel_file = export_to_excel(result)
+        st.download_button(
+            label="Download Comparison as Excel",
+            data=excel_file,
+            file_name="PO_OA_Comparison.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.warning("Comparison could not be performed. Check that both files contain an 'Item' column.")
 else:
     st.info("Please upload both PO and OA files to run comparison.")
