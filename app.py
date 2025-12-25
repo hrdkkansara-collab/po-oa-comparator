@@ -21,23 +21,21 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
                 for row in table:
                     clean_row = []
                     for cell in row:
-                        # Flatten lists and handle None
                         if isinstance(cell, list):
                             cell = ' '.join([str(c) for c in cell])
                         elif cell is None:
                             cell = ''
                         else:
                             cell = str(cell)
-                        # Translate cell
                         try:
                             translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
                         except Exception:
-                            translated_cell = cell  # fallback if translation fails
+                            translated_cell = cell
                         clean_row.append(translated_cell)
                     all_rows.append(clean_row)
 
     if not all_rows:
-        return pd.DataFrame()  # empty DataFrame
+        return pd.DataFrame()
 
     df = pd.DataFrame(all_rows)
 
@@ -48,11 +46,8 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
     else:
         df.columns = [f"Column_{i}" for i in range(len(df.columns))]
 
-    # Only process if df has columns
     if not df.empty and len(df.columns) > 0:
         for col in df.columns:
-            if col not in df.columns:
-                continue
             df[col] = df[col].apply(lambda x: ' '.join(x) if isinstance(x, list) else x)
             if df[col].dtype == 'object':
                 df[col] = df[col].astype(str).str.strip()
@@ -63,9 +58,13 @@ def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
 
     return df
 
-# ---------------------- Comparison with Tolerance ----------------------
+# ---------------------- Safe Comparison with Tolerance ----------------------
 def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
-    # Ensure 'Item' column exists
+    # Check for empty DataFrames
+    if po_df.empty or oa_df.empty:
+        st.warning("One of the uploaded files is empty. Cannot perform comparison.")
+        return pd.DataFrame()
+    # Check for 'Item' column
     if 'Item' not in po_df.columns or 'Item' not in oa_df.columns:
         st.warning("Both PO and OA files must contain an 'Item' column for comparison.")
         return pd.DataFrame()
@@ -73,11 +72,10 @@ def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) ->
     merged = pd.merge(po_df, oa_df, on='Item', suffixes=('_PO', '_OA'), how='outer')
     comparison_results = merged.copy()
 
+    # Compare numeric columns safely
     for col in po_df.columns:
         po_col = f"{col}_PO"
         oa_col = f"{col}_OA"
-
-        # Only process if column is numeric and exists
         if col in tolerances and po_col in comparison_results.columns and oa_col in comparison_results.columns:
             if pd.api.types.is_numeric_dtype(comparison_results[po_col]):
                 comparison_results[f"{col}_Diff"] = comparison_results[oa_col] - comparison_results[po_col]
@@ -142,7 +140,6 @@ if po_file and oa_file and not po_df.empty and not oa_df.empty:
         st.subheader("Comparison Result")
         st.dataframe(result)
 
-        # Excel download
         excel_file = export_to_excel(result)
         st.download_button(
             label="Download Comparison as Excel",
