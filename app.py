@@ -1,6 +1,6 @@
 
 import streamlit as st
-import PyPDF2
+import pdfplumber
 import pandas as pd
 import re
 
