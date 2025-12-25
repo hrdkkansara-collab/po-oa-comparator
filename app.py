@@ -8,40 +8,51 @@ from deep_translator import GoogleTranslator
 def pdf_to_dataframe_translate(pdf_file, target_lang='en') -> pd.DataFrame:
     """
     Extract tables from PDF, translate content to English, return as DataFrame.
-    Handles nested lists, None cells, and safely converts numeric columns.
+    Handles nested lists, None cells, empty tables, and safely converts numeric columns.
     """
     all_rows = []
     with pdfplumber.open(pdf_file) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
             for table in tables:
+                if not table:
+                    continue
                 for row in table:
                     clean_row = []
                     for cell in row:
-                        # Flatten lists or handle None
                         if isinstance(cell, list):
                             cell = ' '.join([str(c) for c in cell])
                         elif cell is None:
                             cell = ''
                         else:
                             cell = str(cell)
-                        # Translate cell
                         translated_cell = GoogleTranslator(source='auto', target=target_lang).translate(cell)
                         clean_row.append(translated_cell)
                     all_rows.append(clean_row)
 
-    df = pd.DataFrame(all_rows)
-    df.columns = df.iloc[0]  # first row as header
-    df = df[1:].reset_index(drop=True)
+    if not all_rows:
+        return pd.DataFrame()  # return empty DataFrame if no table found
 
-    # Clean numeric columns safely
+    df = pd.DataFrame(all_rows)
+
+    # Use first row as header if more than one row
+    if len(df) > 1:
+        df.columns = df.iloc[0]
+        df = df[1:].reset_index(drop=True)
+    else:
+        df.columns = [f"Column_{i}" for i in range(len(df.columns))]
+
+    # Safely clean numeric columns
     for col in df.columns:
+        if col not in df:
+            continue
         df[col] = df[col].apply(lambda x: ' '.join(x) if isinstance(x, list) else x)
         if df[col].dtype == 'object':
             df[col] = df[col].astype(str).str.strip()
         df[col] = pd.to_numeric(df[col], errors='ignore')
 
     return df
+
 
 # ---------------------- Comparison with Tolerance ----------------------
 def compare_po_oa(po_df: pd.DataFrame, oa_df: pd.DataFrame, tolerances: dict) -> pd.DataFrame:
