@@ -1,4 +1,4 @@
-
+from io import BytesIO
 import streamlit as st
 import pdfplumber
 import pandas as pd
@@ -119,8 +119,13 @@ if po_file and oa_file:
         st.subheader("📊 Comparison Results")
         st.dataframe(result, use_container_width=True)
 
-        st.download_button(
-            "📥 Download Excel",
-            result.to_excel(index=False),
-            "PO_vs_OA_Comparison.xlsx"
-        )
+      excel_buffer = BytesIO()
+result.to_excel(excel_buffer, index=False)
+excel_buffer.seek(0)
+
+st.download_button(
+    label="📥 Download Excel",
+    data=excel_buffer,
+    file_name="PO_vs_OA_Comparison.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
